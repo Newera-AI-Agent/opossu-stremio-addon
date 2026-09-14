@@ -19,3 +19,12 @@ Durable session memory for this VM job chain. Each line is one step or wind-down
 - [2026-09-14T19:55:29.861Z | VM 1/3] step 11 shell ok [tools so far: 11]: --- src/app.ts import express, { type ErrorRequestHandler } from 'express'; import { catalog, findItem } from './catalog.js'; import { ConfiguredLegalSource } from './sources.js'; import type { MediaT
 - [2026-09-14T19:55:36.437Z | VM 1/3] step 12 shell FAILED [tools so far: 12]: > opossu-stremio-addon@1.0.0 typecheck > tsc --noEmit src/catalog.ts(7,42): error TS2304: Cannot find name 'MediaType'. [exit 2]
 - [2026-09-14T19:55:42.590Z | VM 1/3] step 13 edit_file ok [tools so far: 13]: patched src/catalog.ts (1 occurrence(s) replaced)
+- [2026-09-14T19:55:57.506Z | VM 1/3] step 14 write_file ok [tools so far: 14]: wrote README.md (64 lines)
+- [2026-09-14T19:56:05.788Z | VM 1/3] VERIFIED green: npm run typecheck && npm test && npm run build
+- [2026-09-14T19:56:05.788Z | VM 1/3] step 15 shell ok [tools so far: 15]: > opossu-stremio-addon@1.0.0 typecheck > tsc --noEmit > opossu-stremio-addon@1.0.0 test > vitest run  RUN  v3.2.7 /home/runner/work/opossu-stremio-addon/opossu-stremio-addon  ✓ test/app.test.ts (
+- [2026-09-14T19:56:12.743Z | VM 1/3] step 16 shell FAILED [tools so far: 16]: total 16 drwxr-xr-x 4 runner runner 4096 Sep 14 19:56 . drwxr-xr-x 9 runner runner 4096 Sep 14 19:56 .. drwxr-xr-x 2 runner runner 4096 Sep 14 19:56 src drwxr-xr-x 2 runner runner 4096 Sep 14 19:56 te
+- [2026-09-14T19:56:18.065Z | VM 1/3] step 17 shell ok [tools so far: 17]: {   "compilerOptions": { "target":"ES2022", "module":"NodeNext", "moduleResolution":"NodeNext", "outDir":"dist", "rootDir":".", "strict":true, "esModuleInterop":true, "skipLibCheck":true, "forceConsis
+- [2026-09-14T19:56:27.558Z | VM 1/3] step 18 write_file ok [tools so far: 18]: wrote tsconfig.json (15 lines)
+- [2026-09-14T19:56:44.490Z | VM 1/3] step 20 write_file ok [tools so far: 19]: wrote tsconfig.json (15 lines)
+- [2026-09-14T19:56:55.764Z | VM 1/3] VERIFIED green: rm -rf dist && npm run typecheck && npm test && npm run build && ls -la dist && test -f dist/server.js && (PORT=4173 node dist/server.js >/tmp/opossu-server.log
+- [2026-09-14T19:56:55.764Z | VM 1/3] step 21 shell ok [tools so far: 20]: > opossu-stremio-addon@1.0.0 typecheck > tsc --noEmit > opossu-stremio-addon@1.0.0 test > vitest run  RUN  v3.2.7 /home/runner/work/opossu-stremio-addon/opossu-stremio-addon  ✓ test/app.test.ts (
