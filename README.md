@@ -56,6 +56,7 @@ Il build TypeScript produce `dist/`. I test sono deterministici e verificano man
 
 ## Deploy
 
+Deploy verificato: https://f893def4.opossu.pages.dev\nRepository pubblico: https://github.com/Newera-AI-Agent/opossu-stremio-addon\n
 Questo progetto è un'API Express long-running, non un sito statico: deve essere eseguito su un host Node.js con le variabili sopra configurate. La richiesta Pages `opossu.newera.page.dev` può servire un artefatto statico solo se la piattaforma supporta anche il runtime API; non dichiarare operativo l'endpoint senza verificare tale runtime.
 
 ## Licenza dei contenuti
