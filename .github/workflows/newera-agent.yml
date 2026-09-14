@@ -1,0 +1,157 @@
+name: NewEra VM Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'NewEra VM job id'
+        required: true
+      api_url:
+        description: 'NewEra control-plane base URL (the agent calls back here for model access)'
+        required: true
+      job_token:
+        description: 'Per-job bearer token for the NewEra model proxy'
+        required: true
+      task_b64:
+        description: 'Base64-encoded build plan / task brief for the VM agent'
+        required: true
+      max_minutes:
+        description: 'Soft deadline for the agent loop (hard cap is 245)'
+        required: false
+        default: '30'
+      relay_index:
+        description: '0 = original job; 1..2 = relay continuation of an earlier VM'
+        required: false
+        default: '0'
+      relay_of:
+        description: 'Parent job id when this run is a relay continuation'
+        required: false
+        default: ''
+      handoff_b64:
+        description: 'Base64 handoff brief from the previous session (resume_vm_agent chains; empty for fresh jobs)'
+        required: false
+        default: ''
+      deploy_subdomain:
+        description: 'v3.5: user-approved deploy subdomain (empty = no deploy consent); the runner harness auto-requests this deploy at every wind-down'
+        required: false
+        default: ''
+      contract_b64:
+        description: 'v4: base64-encoded unified TASK CONTRACT (requirement matrix shared by the chat agent and this VM)'
+        required: false
+        default: ''
+      vm_prompt_b64:
+        description: 'v4: base64-encoded admin override of the VM agent system prompt (empty = factory prompt)'
+        required: false
+        default: ''
+
+concurrency:
+  # One VM job per job id — a re-dispatch replaces the previous runner.
+  group: newera-vm-${{ github.event.inputs.job_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    # Hard cap: the runner enforces max_minutes itself and reserves packaging
+    # headroom; this job-level cap is the backstop that guarantees the package
+    # upload step still runs.
+    timeout-minutes: 245
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 is pinned explicitly (v3.6: Node 20 hit GitHub's deprecation
+      # warnings on every run); the runner script itself has ZERO npm
+      # dependencies and targets plain modern Node (20+), so there is no
+      # npm-install step to wait for. Python is NOT set up here on purpose:
+      # ubuntu-latest images ship python3 + pip preinstalled, and a
+      # setup-python step costs 15-30 s of every job for a version the agent
+      # can already use (python3 / python3 -m pip). Tasks that truly need
+      # a different interpreter can install it with the shell tool.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Run NewEra VM agent
+        id: agent
+        env:
+          NEWERA_API_URL: ${{ github.event.inputs.api_url }}
+          NEWERA_JOB_ID: ${{ github.event.inputs.job_id }}
+          NEWERA_JOB_TOKEN: ${{ github.event.inputs.job_token }}
+          NEWERA_TASK_B64: ${{ github.event.inputs.task_b64 }}
+          NEWERA_MAX_MINUTES: ${{ github.event.inputs.max_minutes }}
+          NEWERA_RELAY_INDEX: ${{ github.event.inputs.relay_index }}
+          NEWERA_RELAY_OF: ${{ github.event.inputs.relay_of }}
+          NEWERA_HANDOFF_B64: ${{ github.event.inputs.handoff_b64 }}
+          NEWERA_DEPLOY_SUBDOMAIN: ${{ github.event.inputs.deploy_subdomain }}
+          NEWERA_CONTRACT_B64: ${{ github.event.inputs.contract_b64 }}
+          NEWERA_VM_PROMPT_B64: ${{ github.event.inputs.vm_prompt_b64 }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          node .newera/vm/runner.mjs 2>&1 | tee -a agent.log
+          EXIT=${PIPESTATUS[0]}
+          echo "agent_exit_code=$EXIT" >> "$GITHUB_OUTPUT" || true
+          exit $EXIT
+
+      - name: Upload agent log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-log
+          path: agent.log
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # Deploy support: when the agent verified a green build and called
+      # request_deploy{subdomain}, it recorded the static output dir in
+      # .newera/vm/build-output-path.txt. Package that directory under its
+      # own name (out/, dist/, build/web/ …) so the deploy route's
+      # pickStaticRoot recognizes the prefix exactly as it does for the
+      # standard build workflow's build-output artifact.
+      - name: Package build output (deploy)
+        if: always()
+        run: |
+          set +e
+          rm -f build-output.zip
+          if [ -f .newera/vm/build-output-path.txt ] && [ -s .newera/vm/build-output-path.txt ]; then
+            OUT="$(head -n1 .newera/vm/build-output-path.txt | tr -d '\r\n')"
+            if [ -n "$OUT" ] && [ -d "$OUT" ]; then
+              zip -qr build-output.zip "$OUT"
+              echo "packaged build output: $OUT"
+              unzip -l build-output.zip 2>/dev/null | tail -1
+            else
+              echo "no build output directory at: $OUT"
+            fi
+          else
+            echo "no deploy request — skipping build output packaging"
+          fi
+
+      - name: Upload build output artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: build-output.zip
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Package project
+        if: always()
+        run: |
+          set +e
+          rm -f newera-package.zip
+          zip -qr newera-package.zip . \
+            -x 'newera-package.zip' 'build-output.zip' 'agent.log' '.git/*' 'node_modules/*' '.venv/*' '__pycache__/*' '.newera/vm/runner.mjs' '.github/workflows/newera-agent.yml'
+          echo "packaged $(unzip -l newera-package.zip 2>/dev/null | tail -1)"
+
+      - name: Upload project package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newera-package
+          path: newera-package.zip
+          retention-days: 3
+          if-no-files-found: warn

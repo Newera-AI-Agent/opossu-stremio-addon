@@ -1,0 +1,38 @@
+{
+  "originalRequest": "pubbliche! il sottodominio sarà opossu.newera.page.dev.",
+  "normalizedInterpretation": "pubbliche!; il sottodominio sarà opossu.newera.page.dev.",
+  "assumptions": [],
+  "profile": "fast",
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "pubbliche!",
+      "mandatory": true,
+      "status": "pending",
+      "evidenceType": "custom",
+      "acceptanceCriteria": "Concrete implementation evidence is recorded and the outcome matches the user request."
+    },
+    {
+      "id": "REQ-002",
+      "description": "il sottodominio sarà opossu.newera.page.dev.",
+      "mandatory": true,
+      "status": "pending",
+      "evidenceType": "file_exists",
+      "acceptanceCriteria": "The requested file or implementation exists and its relevant contents were inspected."
+    }
+  ],
+  "featureMatrix": [
+    "pubbliche!",
+    "il sottodominio sarà opossu.newera.page.dev."
+  ],
+  "contentMatrix": [],
+  "assetManifest": [],
+  "audioManifest": [],
+  "testMatrix": [],
+  "artifactMatrix": [],
+  "platformRequirements": [],
+  "permissions": [],
+  "deferredItems": [],
+  "createdAt": 1789415538403,
+  "updatedAt": 1789415538405
+}

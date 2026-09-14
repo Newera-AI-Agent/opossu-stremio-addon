@@ -1,0 +1,122 @@
+name: NewEra Remote VM
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: 'Shell script to execute in the VM (bash)'
+        required: true
+      job_id:
+        description: 'Caller-supplied job identifier (for tracing)'
+        required: false
+        default: ''
+
+concurrency:
+  # One remote VM per repo branch at a time. A second dispatch queues instead
+  # of canceling — canceling mid-job would lose the package.
+  group: "remote-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  remote:
+    runs-on: ubuntu-latest
+    # 4h HARD LIMIT. GitHub terminates the VM at this point no matter what.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Initialize
+        run: |
+          mkdir -p .newera/remote
+          printf '' > remote.log
+          echo "job_id=${{ inputs.job_id }}" | tee -a remote.log
+          echo "started_at=$(date -u +%FT%TZ)" | tee -a remote.log
+          echo "hard_limit_minutes=240" | tee -a remote.log
+
+      - name: Materialize job script
+        # The script arrives as a dispatch input, never interpolated into the
+        # YAML — it is written to disk verbatim and executed from there, so
+        # quoting in the script cannot break the workflow itself.
+        env:
+          JOB_SCRIPT: ${{ inputs.script }}
+        run: |
+          mkdir -p .newera/remote
+          printf '%s' "$JOB_SCRIPT" > .newera/remote/job.sh
+          echo "--- job script ---" | tee -a remote.log
+          cat .newera/remote/job.sh | tee -a remote.log
+          echo "------------------" | tee -a remote.log
+
+      - name: Run job (soft cap 14100s)
+        id: job
+        continue-on-error: true
+        run: |
+          set +e
+          # Soft cap: 5 minutes under the workflow timeout-minutes so the
+          # packaging steps below ALWAYS get to run. Exit 124 = time limit.
+          timeout 14100 bash .newera/remote/job.sh 2>&1 | tee -a remote.log
+          EXIT=${PIPESTATUS[0]}
+          echo "exit_code=$EXIT" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT" | tee -a remote.log
+          if [ $EXIT -eq 124 ] || [ $EXIT -eq 137 ]; then
+            echo "result=time_limit" >> $GITHUB_OUTPUT
+            echo "REMOTE SESSION HIT THE TIME LIMIT — partial results packaged below." | tee -a remote.log
+          elif [ $EXIT -eq 0 ]; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failed" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Package working tree
+        if: always()
+        # The deliverable: the whole repo as the job left it, minus VCS and
+        # dependency dirs. On success AND on the time limit — the user always
+        # gets whatever the VM produced.
+        run: |
+          tar -czf newera-package.tar.gz --exclude=.git --exclude=node_modules --exclude=newera-package.tar.gz . 2>>remote.log || true
+          ls -lh newera-package.tar.gz | tee -a remote.log
+
+      - name: Write result manifest
+        if: always()
+        run: |
+          RESULT="${{ steps.job.outputs.result || 'unknown' }}"
+          EXIT="${{ steps.job.outputs.exit_code || '-1' }}"
+          printf '{\n  "job_id": "%s",\n  "result": "%s",\n  "exit_code": %s,\n  "finished_at": "%s",\n  "hard_limit_minutes": 240\n}\n' "${{ inputs.job_id }}" "$RESULT" "$EXIT" "$(date -u +%FT%TZ)" > remote-result.json
+          cat remote-result.json | tee -a remote.log
+
+      - name: Upload remote log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-log
+          path: remote.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload result manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-result
+          path: remote-result.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload packaged workspace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-package
+          path: newera-package.tar.gz
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Fail job when the script failed
+        if: steps.job.outputs.result == 'failed'
+        run: |
+          echo "::error::Remote job failed — see the remote-log artifact"
+          exit 1

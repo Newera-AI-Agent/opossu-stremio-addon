@@ -1,0 +1,516 @@
+name: Build
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  # The workflow triggers ONLY on workflow_dispatch (not push). The push route
+  # calls dispatchWorkflow explicitly, which is idempotent per SHA. This
+  # eliminates the double-trigger bug where push created Run P and dispatch
+  # created Run D for the same SHA, causing Run D to queue behind Run P.
+  # mechanism. Setting cancel-in-progress: true here would cancel Run P (the
+  # push run) when a stale dispatch lands — the opposite of what we want.
+  group: "build-${{ github.sha }}"
+  cancel-in-progress: false
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize diagnostics
+        run: printf '' > build.log
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Bun (if bun lockfile exists)
+        if: hashFiles('bun.lock', 'bun.lockb') != ''
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+
+      - name: Enable Corepack
+        if: hashFiles('pnpm-lock.yaml', 'yarn.lock') != ''
+        run: corepack enable 2>&1 | tee -a build.log
+
+      - name: Detect build strategy
+        id: pm
+        run: |
+          if [ -f .newera/build.sh ]; then
+            echo "manager=custom" >> $GITHUB_OUTPUT
+          elif [ -f pubspec.yaml ]; then
+            echo "manager=flutter" >> $GITHUB_OUTPUT
+          elif [ ! -f package.json ]; then
+            echo "manager=none" >> $GITHUB_OUTPUT
+          elif [ -f bun.lock ] || [ -f bun.lockb ]; then echo "manager=bun" >> $GITHUB_OUTPUT
+          elif [ -f pnpm-lock.yaml ]; then echo "manager=pnpm" >> $GITHUB_OUTPUT
+          elif [ -f yarn.lock ]; then echo "manager=yarn" >> $GITHUB_OUTPUT
+          else echo "manager=npm" >> $GITHUB_OUTPUT; fi
+          echo "Detected build strategy: $(tail -n1 $GITHUB_OUTPUT)" | tee -a build.log
+
+      # Phase 7 / Flutter: install Flutter SDK and build for every platform
+      # the project supports. Each platform's output is uploaded as a separate
+      # artifact so the agent can hand the user a download URL per platform.
+      - name: Set up Flutter
+        if: steps.pm.outputs.manager == 'flutter'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter create (scaffold missing platform dirs)
+        if: steps.pm.outputs.manager == 'flutter'
+        # Phase 8 / Bug #4: the Flutter template ships only lib/ + pubspec.yaml.
+        # flutter build web/apk/ios FAILS if the platform dirs (android/, web/,
+        # ios/) do not exist. Run flutter create --platforms to scaffold any
+        # missing platform directories without overwriting existing files.
+        run: |
+          set +e
+          echo "::group::flutter create --platforms=." | tee -a build.log
+          flutter create --platforms=web,android,ios --org com.newera . 2>&1 | tee -a build.log
+          echo "::endgroup::" | tee -a build.log
+          # Verify the critical dirs exist now
+          for dir in web android ios; do
+            if [ -d "$dir" ]; then
+              echo "✓ $dir/ exists" | tee -a build.log
+            else
+              echo "::warning::$dir/ still missing after flutter create" | tee -a build.log
+            fi
+          done
+          exit 0
+
+      - name: Flutter pub get
+        if: steps.pm.outputs.manager == 'flutter'
+        run: flutter pub get 2>&1 | tee -a build.log
+
+      - name: Flutter build (web)
+        if: steps.pm.outputs.manager == 'flutter'
+        id: flutter_web
+        continue-on-error: true
+        run: |
+          set +e
+          echo "::group::flutter build web" | tee -a build.log
+          flutter build web --release 2>&1 | tee -a build.log
+          EXIT=${PIPESTATUS[0]}
+          echo "::endgroup::" | tee -a build.log
+          if [ $EXIT -eq 0 ] && [ -d build/web ]; then
+            echo "flutter_web=pass" >> $GITHUB_OUTPUT
+          else
+            echo "flutter_web=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Flutter build (Android APK)
+        if: steps.pm.outputs.manager == 'flutter'
+        id: flutter_apk
+        continue-on-error: true
+        run: |
+          set +e
+          echo "::group::flutter build apk" | tee -a build.log
+          flutter build apk --release 2>&1 | tee -a build.log
+          EXIT=${PIPESTATUS[0]}
+          echo "::endgroup::" | tee -a build.log
+          if [ $EXIT -eq 0 ] && [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            echo "flutter_apk=pass" >> $GITHUB_OUTPUT
+          else
+            echo "flutter_apk=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Flutter build (iOS — unsigned)
+        if: steps.pm.outputs.manager == 'flutter'
+        id: flutter_ios
+        continue-on-error: true
+        # iOS builds require a macOS runner. This step runs on ubuntu and will
+        # produce a no-codesign build only if the runner is macOS. On Linux it
+        # skips gracefully — the agent tells the user iOS needs a macOS runner.
+        run: |
+          set +e
+          if [ "$(uname)" != "Darwin" ]; then
+            echo "Skipping iOS build on non-macOS runner. iOS requires macos-latest." | tee -a build.log
+            echo "flutter_ios=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "::group::flutter build ios" | tee -a build.log
+          flutter build ios --release --no-codesign 2>&1 | tee -a build.log
+          EXIT=${PIPESTATUS[0]}
+          echo "::endgroup::" | tee -a build.log
+          if [ $EXIT -eq 0 ]; then
+            echo "flutter_ios=pass" >> $GITHUB_OUTPUT
+          else
+            echo "flutter_ios=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Upload Flutter web artifact
+        if: steps.pm.outputs.manager == 'flutter' && steps.flutter_web.outputs.flutter_web == 'pass'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web
+          path: build/web
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload Flutter APK artifact
+        if: steps.pm.outputs.manager == 'flutter' && steps.flutter_apk.outputs.flutter_apk == 'pass'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload Flutter iOS artifact
+        if: steps.pm.outputs.manager == 'flutter' && steps.flutter_ios.outputs.flutter_ios == 'pass'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-ios
+          path: build/ios/iphoneos/Runner.app
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Flutter build (Windows .exe)
+        if: steps.pm.outputs.manager == 'flutter'
+        id: flutter_windows
+        continue-on-error: true
+        # Windows builds require a Windows runner. This step runs on ubuntu
+        # and will skip gracefully on Linux — the agent tells the user Windows
+        # needs a Windows runner. On Windows, it produces build/windows/x64/runner/Release/
+        run: |
+          set +e
+          if [ "$(uname)" = "Linux" ]; then
+            echo "Skipping Windows build on Linux runner. Windows .exe requires windows-latest." | tee -a build.log
+            echo "flutter_windows=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "::group::flutter build windows" | tee -a build.log
+          flutter build windows --release 2>&1 | tee -a build.log
+          EXIT=${PIPESTATUS[0]}
+          echo "::endgroup::" | tee -a build.log
+          if [ $EXIT -eq 0 ]; then
+            echo "flutter_windows=pass" >> $GITHUB_OUTPUT
+          else
+            echo "flutter_windows=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Upload Flutter Windows artifact
+        if: steps.pm.outputs.manager == 'flutter' && steps.flutter_windows.outputs.flutter_windows == 'pass'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-windows
+          path: build/windows/x64/runner/Release/*
+          retention-days: 7
+          if-no-files-found: warn
+
+
+      - name: Install deps (npm)
+        id: install_npm
+        if: steps.pm.outputs.manager == 'npm'
+        continue-on-error: true
+        # Phase 2 / Bug #2: npm 7+ enforces peer deps by default. The react
+        # template's date-fns@^4 + react-day-picker@8.10.1 conflict ERESOLVEs
+        # under npm ci, killing the install step before the build step runs
+        # and bypassing the build_status failure taxonomy. Fall back through
+        # legacy-peer-deps before giving up, and record an install_status
+        # output so the failure-propagation step can surface it with the same
+        # shape as a build failure.
+        run: |
+          set +e
+          echo "::group::npm ci" | tee -a build.log
+          npm ci 2>&1 | tee -a build.log
+          # Capture PIPESTATUS[0] IMMEDIATELY after the pipeline: every
+          # subsequent foreground command (including "if [ ... ]" tests)
+          # resets PIPESTATUS, so capturing it later reports a green
+          # install as failed.
+          EXIT=${PIPESTATUS[0]}
+          if [ $EXIT -ne 0 ]; then
+            echo "npm ci failed — retrying with --legacy-peer-deps..." | tee -a build.log
+            npm ci --legacy-peer-deps 2>&1 | tee -a build.log
+            EXIT=${PIPESTATUS[0]}
+            if [ $EXIT -ne 0 ]; then
+              echo "npm ci --legacy-peer-deps failed — falling back to npm install --legacy-peer-deps..." | tee -a build.log
+              npm install --legacy-peer-deps 2>&1 | tee -a build.log
+              EXIT=${PIPESTATUS[0]}
+            fi
+          fi
+          echo "::endgroup::" | tee -a build.log
+          if [ $EXIT -eq 0 ]; then
+            echo "install_status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "install_status=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Install deps (bun)
+        id: install_bun
+        if: steps.pm.outputs.manager == 'bun'
+        continue-on-error: true
+        run: |
+          set +e
+          bun install --frozen-lockfile 2>&1 | tee -a build.log
+          # Capture immediately — see npm install step note on PIPESTATUS.
+          EXIT=${PIPESTATUS[0]}
+          if [ $EXIT -ne 0 ]; then
+            echo "bun install --frozen-lockfile failed — retrying without lockfile..." | tee -a build.log
+            bun install 2>&1 | tee -a build.log
+            EXIT=${PIPESTATUS[0]}
+          fi
+          if [ $EXIT -eq 0 ]; then
+            echo "install_status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "install_status=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Install deps (pnpm)
+        id: install_pnpm
+        if: steps.pm.outputs.manager == 'pnpm'
+        continue-on-error: true
+        # pnpm's equivalent of --legacy-peer-deps is --strict-peer-dependencies=false.
+        # The react template's date-fns@^4 + react-day-picker@8 conflict hits
+        # the same ERESOLVE under pnpm as under npm.
+        run: |
+          set +e
+          pnpm install --frozen-lockfile 2>&1 | tee -a build.log
+          # Capture immediately — see npm install step note on PIPESTATUS.
+          EXIT=${PIPESTATUS[0]}
+          if [ $EXIT -ne 0 ]; then
+            echo "pnpm install --frozen-lockfile failed — retrying with relaxed peer deps..." | tee -a build.log
+            pnpm install --frozen-lockfile --strict-peer-dependencies=false 2>&1 | tee -a build.log
+            EXIT=${PIPESTATUS[0]}
+            if [ $EXIT -ne 0 ]; then
+              echo "pnpm install with relaxed peers failed — falling back to plain pnpm install..." | tee -a build.log
+              pnpm install --strict-peer-dependencies=false 2>&1 | tee -a build.log
+              EXIT=${PIPESTATUS[0]}
+            fi
+          fi
+          if [ $EXIT -eq 0 ]; then
+            echo "install_status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "install_status=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Install deps (yarn)
+        id: install_yarn
+        if: steps.pm.outputs.manager == 'yarn'
+        continue-on-error: true
+        # yarn (v1) ignores peer deps by default, but add --ignore-engines as
+        # a fallback for engine mismatches.
+        run: |
+          set +e
+          yarn install --immutable 2>&1 | tee -a build.log
+          # Capture immediately — see npm install step note on PIPESTATUS.
+          EXIT=${PIPESTATUS[0]}
+          if [ $EXIT -ne 0 ]; then
+            echo "yarn install --immutable failed — retrying with --frozen-lockfile..." | tee -a build.log
+            yarn install --frozen-lockfile 2>&1 | tee -a build.log
+            EXIT=${PIPESTATUS[0]}
+            if [ $EXIT -ne 0 ]; then
+              echo "yarn install --frozen-lockfile failed — falling back to plain yarn install..." | tee -a build.log
+              yarn install --ignore-engines 2>&1 | tee -a build.log
+              EXIT=${PIPESTATUS[0]}
+            fi
+          fi
+          if [ $EXIT -eq 0 ]; then
+            echo "install_status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "install_status=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Build
+        id: build
+        continue-on-error: true
+        run: |
+          set +e
+          MANAGER="${{ steps.pm.outputs.manager }}"
+          if [ "$MANAGER" = "custom" ]; then
+            # Stack escape hatch: any toolchain (Flutter, Go, Python, ...) can
+            # own its own build by committing .newera/build.sh.
+            chmod +x .newera/build.sh
+            ./.newera/build.sh 2>&1 | tee -a build.log
+          elif [ "$MANAGER" = "flutter" ]; then
+            # Phase 7: Flutter builds already ran in the dedicated steps above
+            # (web, apk, ios). This step just aggregates the pass/fail status.
+            WEB="${{ steps.flutter_web.outputs.flutter_web }}"
+            APK="${{ steps.flutter_apk.outputs.flutter_apk }}"
+            IOS="${{ steps.flutter_ios.outputs.flutter_ios }}"
+            echo "Flutter build status: web=$WEB apk=$APK ios=$IOS" | tee -a build.log
+            # The build passes if at least ONE platform succeeded.
+            if [ "$WEB" = "pass" ] || [ "$APK" = "pass" ] || [ "$IOS" = "pass" ]; then
+              echo "build_status=pass" >> $GITHUB_OUTPUT
+            else
+              echo "build_status=fail" >> $GITHUB_OUTPUT
+            fi
+            exit 0
+          elif [ "$MANAGER" = "none" ]; then
+            echo "No package.json and no .newera/build.sh — treating the repo as static, nothing to build." | tee -a build.log
+            true
+          elif [ "$MANAGER" = "bun" ]; then
+            bun run build 2>&1 | tee -a build.log
+          elif [ "$MANAGER" = "pnpm" ]; then
+            pnpm run build 2>&1 | tee -a build.log
+          elif [ "$MANAGER" = "yarn" ]; then
+            yarn build 2>&1 | tee -a build.log
+          else
+            npm run build 2>&1 | tee -a build.log
+          fi
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "build_status=pass" >> $GITHUB_OUTPUT
+          else
+            echo "build_status=fail" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+      - name: Scaffold static site output
+        if: steps.pm.outputs.manager == 'none'
+        run: |
+          set -e
+          mkdir -p .newera/out
+          # A hand-written static site (index.html + css/js/assets at the repo
+          # root) is a first-class project here: there is nothing to compile, so
+          # the repo itself is the deployable output. Copy it into the same
+          # .newera/out contract every other stack ships.
+          rsync -a --exclude '.git' --exclude '.github' --exclude '.newera' \
+            --exclude 'node_modules' ./ .newera/out/
+          COUNT=$(find .newera/out -type f | wc -l)
+          echo "Static site scaffolded into .newera/out ($COUNT file(s))." | tee -a build.log
+          if [ ! -f .newera/out/index.html ]; then
+            echo "::warning::No index.html at the repo root — the deploy will have no entry document." | tee -a build.log
+          fi
+
+      - name: Detect Next.js deploy mode
+        if: steps.build.outputs.build_status == 'pass'
+        id: next_mode
+        continue-on-error: true
+        # Phase 4 / Bug #4: replaces the deprecated Cloudflare Pages adapter
+        # for Next.js. The old adapter (removed here) was deprecated per the
+        # codebase's own skills-extra.ts, ERESOLVEs against wrangler 4 /
+        # workers-types 5, and was continue-on-error: true so the build
+        # stayed green with no static output. The fallback warning
+        # ("set output: 'export'") was impossible for SSR apps with API
+        # routes / D1 / server actions.
+        #
+        # The new step detects three legitimate Next.js deploy modes:
+        #   1. static_export: next.config has output: 'export' → produces out/.
+        #      Copy to .newera/out so pickStaticRoot finds it.
+        #   2. opennext: package.json has @opennextjs/cloudflare → run
+        #      build:worker, producing .open-next/ for EdgeOne (Workers-style).
+        #   3. ssr_edgeone: SSR Next.js without OpenNext — deploy via EdgeOne,
+        #      not Cloudflare Pages. Emit a warning that points at EdgeOne,
+        #      NOT at output: 'export'.
+        run: |
+          set +e
+          if [ ! -d .next ]; then
+            echo "next_mode=none" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          # Static export: next.config has output: 'export' → out/ already exists.
+          if [ -d out ]; then
+            echo "next_mode=static_export" >> $GITHUB_OUTPUT
+            mkdir -p .newera
+            rm -rf .newera/out
+            cp -r out .newera/out 2>/dev/null
+            echo "Static export detected — out/ copied to .newera/out." | tee -a build.log
+            exit 0
+          fi
+          # OpenNext: package.json has @opennextjs/cloudflare → run build:worker.
+          if grep -q '"@opennextjs/cloudflare"' package.json 2>/dev/null; then
+            echo "next_mode=opennext" >> $GITHUB_OUTPUT
+            echo "OpenNext detected — running build:worker to produce .open-next/." | tee -a build.log
+            MANAGER="${{ steps.pm.outputs.manager }}"
+            if [ "$MANAGER" = "pnpm" ]; then pnpm run build:worker 2>&1 | tee -a build.log
+            elif [ "$MANAGER" = "bun" ]; then bun run build:worker 2>&1 | tee -a build.log
+            elif [ "$MANAGER" = "yarn" ]; then yarn build:worker 2>&1 | tee -a build.log
+            else npm run build:worker 2>&1 | tee -a build.log; fi
+            if [ -d .open-next ]; then
+              echo "OpenNext build succeeded — .open-next/ ready for EdgeOne deploy." | tee -a build.log
+            else
+              echo "::warning::build:worker did not produce .open-next/. Check the build:worker script in package.json." | tee -a build.log
+            fi
+            exit 0
+          fi
+          # SSR Next.js without OpenNext: must go via EdgeOne, not Pages.
+          echo "next_mode=ssr_edgeone" >> $GITHUB_OUTPUT
+          echo "::warning::SSR Next.js app detected. Cloudflare Pages only serves static output — deploy this via EdgeOne (deploy{target: 'edgeone'}), which supports Next.js SSR natively. Do NOT set output: 'export' — this app uses server-side features that static export cannot satisfy." | tee -a build.log
+          exit 0
+
+      - name: Add _headers for iframe embedding (LivePreview)
+        if: steps.build.outputs.build_status == 'pass'
+        # Phase 8 / Bug #2: Cloudflare Pages and EdgeOne Pages sometimes send
+        # X-Frame-Options: DENY by default, which blocks the NewEra LivePreview
+        # iframe from loading the deployed URL. A _headers file at the site
+        # root overrides this and allows embedding from any origin.
+        run: |
+          for dir in .newera/out out dist/public dist build/web build; do
+            if [ -d "$dir" ]; then
+              echo '/*' > "$dir/_headers"
+              echo '  X-Frame-Options: ALLOWALL' >> "$dir/_headers"
+              echo '  Access-Control-Allow-Origin: *' >> "$dir/_headers"
+              echo "Added _headers to $dir/ (allows iframe embedding)" | tee -a build.log
+            fi
+          done
+
+      - name: Report deployable output
+        if: always()
+        run: |
+          for d in .newera/out out dist build; do
+            if [ -d "$d" ]; then
+              echo "deployable_output=$d" | tee -a build.log
+              exit 0
+            fi
+          done
+          echo "deployable_output=none — no static directory was produced; the deploy step will refuse this build." | tee -a build.log
+
+      - name: Upload build log
+
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload build output
+        if: steps.build.outputs.build_status == 'pass'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            .newera/out
+            .next
+            .open-next
+            .vercel/output/static
+            dist
+            out
+            build/web
+            build
+            public
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Fail job if install failed
+        if: |
+          (steps.install_npm.outputs.install_status == 'fail' ||
+           steps.install_bun.outputs.install_status == 'fail' ||
+           steps.install_pnpm.outputs.install_status == 'fail' ||
+           steps.install_yarn.outputs.install_status == 'fail')
+        run: |
+          echo "::error::Install failed — see build-log artifact"
+          exit 1
+
+      - name: Fail job if build failed
+        if: steps.build.outputs.build_status == 'fail'
+        run: |
+          echo "::error::Build failed — see build-log artifact"
+          exit 1
