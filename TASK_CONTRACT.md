@@ -1,19 +1,17 @@
 # TASK CONTRACT (immutable product obligation)
 
-**Original request:** pubbliche! il sottodominio sarà opossu.newera.page.dev.
-**Normalized interpretation:** Repository pubblico e deploy permanente sul sottodominio scelto opossu.newera.page.dev.
+**Original request:** opossu-2026 va benissimo
+**Normalized interpretation:** opossu-2026 va benissimo
 **Execution profile:** fast
-**Created:** 2026-09-14T19:52:18.403Z
+**Created:** 2026-09-14T20:10:08.687Z
 
 ## Requirements
 
 | ID | Description | Mandatory | Status | Evidence | Acceptance Criteria |
 |----|-------------|-----------|--------|----------|---------------------|
-| REQ-001 | pubbliche! | YES | completed | watch_workflow:34890684291:pass; repository:public | Concrete implementation evidence is recorded and the outcome matches the user request. |
-| REQ-002 | il sottodominio sarà opossu.newera.page.dev. | YES | completed | deploy:cloudflare:opossu:verified:true | The requested file or implementation exists and its relevant contents were inspected. |
+| REQ-001 | opossu-2026 va benissimo | YES | pending | — | Concrete implementation evidence is recorded and the outcome matches the user request. |
 
 ## Feature Matrix
-- pubbliche!
-- il sottodominio sarà opossu.newera.page.dev.
+- opossu-2026 va benissimo
 
-## Completion: 0/2 mandatory requirements have evidence
+## Completion: 0/1 mandatory requirements have evidence

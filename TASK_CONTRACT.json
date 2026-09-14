@@ -1,29 +1,20 @@
 {
-  "originalRequest": "pubbliche! il sottodominio sarà opossu.newera.page.dev.",
-  "normalizedInterpretation": "Repository pubblico e deploy permanente sul sottodominio scelto opossu.newera.page.dev.",
+  "originalRequest": "opossu-2026 va benissimo",
+  "normalizedInterpretation": "opossu-2026 va benissimo",
   "assumptions": [],
   "profile": "fast",
   "requirements": [
     {
       "id": "REQ-001",
-      "description": "pubbliche!",
+      "description": "opossu-2026 va benissimo",
       "mandatory": true,
-      "status": "completed",
-      "acceptanceCriteria": "Concrete implementation evidence is recorded and the outcome matches the user request.",
-      "evidenceRef": "watch_workflow:34890684291:pass; repository:public"
-    },
-    {
-      "id": "REQ-002",
-      "description": "il sottodominio sarà opossu.newera.page.dev.",
-      "mandatory": true,
-      "status": "completed",
-      "acceptanceCriteria": "The requested file or implementation exists and its relevant contents were inspected.",
-      "evidenceRef": "deploy:cloudflare:opossu:verified:true"
+      "status": "pending",
+      "evidenceType": "custom",
+      "acceptanceCriteria": "Concrete implementation evidence is recorded and the outcome matches the user request."
     }
   ],
   "featureMatrix": [
-    "pubbliche!",
-    "il sottodominio sarà opossu.newera.page.dev."
+    "opossu-2026 va benissimo"
   ],
   "contentMatrix": [],
   "assetManifest": [],
@@ -33,6 +24,6 @@
   "platformRequirements": [],
   "permissions": [],
   "deferredItems": [],
-  "createdAt": 1789415538403,
-  "updatedAt": 1789416397949
+  "createdAt": 1789416608687,
+  "updatedAt": 1789416608688
 }
