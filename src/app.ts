@@ -1,0 +1,14 @@
+import express, { type ErrorRequestHandler } from 'express';
+import { catalog, findItem } from './catalog.js';
+import { ConfiguredLegalSource } from './sources.js';
+import type { MediaType } from './types.js';
+const validTypes = new Set<MediaType>(['movie','series']);
+export const app = express();
+app.disable('x-powered-by'); app.use(express.json());
+app.get('/health', (_req,res)=>res.json({status:'ok', service:'opossu-stremio-addon'}));
+app.get('/manifest.json', (_req,res)=>res.json({id:'org.opossu.italia', version:'1.0.0', name:'Opossu — Cinema italiano legale', description:'Scopri titoli italiani da fonti gratuite e autorizzate. La disponibilità dipende dalla configurazione della fonte.', logo:'https://opossu.newera.page.dev/logo.png', resources:['catalog','meta','stream'], types:['movie','series'], catalogs:[{type:'movie',id:'italian-legal',name:'Film italiani legali'},{type:'series',id:'italian-legal',name:'Serie italiane legali'}], idPrefixes:['opossu:']}));
+app.get('/catalog/:type/:catalogId.json', (req,res)=>{ const type=req.params.type as MediaType; if(!validTypes.has(type)||req.params.catalogId!=='italian-legal') return res.status(404).json({error:'Catalogo non trovato'}); res.json({metas:catalog.filter(x=>x.type===type).map(({id,type,name,poster,description,releaseInfo,genres})=>({id,type,name,poster,description,releaseInfo,genres}))}); });
+app.get('/meta/:type/:id.json', (req,res)=>{ const type=req.params.type as MediaType; if(!validTypes.has(type)||!req.params.id.startsWith('opossu:')) return res.status(400).json({error:'Identificatore non valido'}); const item=findItem(req.params.id,type); if(!item) return res.status(404).json({error:'Titolo non trovato'}); res.json({meta:{...item,sourceNote:'Demo/pubblico dominio: verificare sempre licenza e disponibilità della fonte.'}}); });
+app.get('/stream/:type/:id.json', async (req,res,next)=>{ try { const type=req.params.type as MediaType; if(!validTypes.has(type)||!req.params.id.startsWith('opossu:')) return res.status(400).json({error:'Identificatore non valido'}); if(!findItem(req.params.id,type)) return res.status(404).json({error:'Titolo non trovato'}); const streams=await new ConfiguredLegalSource().streamsFor(req.params.id,type); res.json({streams}); } catch(error){ next(error); } });
+const errors:ErrorRequestHandler=(_error,_req,res,_next)=>res.status(502).json({error:'La fonte legale configurata non è temporaneamente disponibile'});
+app.use(errors);
