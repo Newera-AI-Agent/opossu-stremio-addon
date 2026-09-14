@@ -9,7 +9,6 @@
       "description": "pubbliche!",
       "mandatory": true,
       "status": "pending",
-      "evidenceType": "custom",
       "acceptanceCriteria": "Concrete implementation evidence is recorded and the outcome matches the user request."
     },
     {
@@ -17,7 +16,6 @@
       "description": "il sottodominio sarà opossu.newera.page.dev.",
       "mandatory": true,
       "status": "pending",
-      "evidenceType": "file_exists",
       "acceptanceCriteria": "The requested file or implementation exists and its relevant contents were inspected."
     }
   ],
@@ -34,5 +32,5 @@
   "permissions": [],
   "deferredItems": [],
   "createdAt": 1789415538403,
-  "updatedAt": 1789415538405
+  "updatedAt": 1789415926486
 }
