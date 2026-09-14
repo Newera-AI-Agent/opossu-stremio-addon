@@ -1,6 +1,6 @@
 import express from 'express';
-import { catalog, findItem } from './catalog';
-import { ConfiguredLegalSource } from './sources';
+import { catalog, findItem } from './catalog.js';
+import { ConfiguredLegalSource } from './sources.js';
 const validTypes = new Set(['movie', 'series']);
 export const app = express();
 app.disable('x-powered-by');

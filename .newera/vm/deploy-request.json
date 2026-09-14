@@ -1,7 +1,7 @@
 {
-  "subdomain": "opossu",
+  "subdomain": "opossu-2026",
   "mode": "permanent",
-  "build_output": "public",
-  "job": "vm-mu1ntiez-kawejy09",
-  "at": "2026-09-14T19:57:36.055Z"
+  "build_output": "dist",
+  "job": "vm-mu1ogfm0-iyqp04pb",
+  "at": "2026-09-14T20:12:51.748Z"
 }

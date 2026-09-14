@@ -1,6 +1,6 @@
 import express, { type ErrorRequestHandler } from 'express';
 import { catalog, findItem } from './catalog.js';
-import { ConfiguredLegalSource } from './sources';
+import { ConfiguredLegalSource } from './sources.js';
 import type { MediaType } from './types.ts';
 const validTypes = new Set<MediaType>(['movie','series']);
 export const app = express();

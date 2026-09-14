@@ -1,22 +1,14 @@
 {
-  "originalRequest": "pubbliche! il sottodominio sarà opossu.newera.page.dev.",
-  "normalizedInterpretation": "pubbliche!; il sottodominio sarà opossu.newera.page.dev.",
+  "originalRequest": "opossu-2026 va benissimo",
+  "normalizedInterpretation": "opossu-2026 va benissimo",
   "requirements": [
     {
       "id": "REQ-001",
-      "description": "pubbliche!",
+      "description": "opossu-2026 va benissimo",
       "mandatory": true,
       "status": "complete",
       "acceptanceCriteria": "Concrete implementation evidence is recorded and the outcome matches the user request.",
-      "evidenceRef": "Public TypeScript/Express addon implemented in src/ with manifest, catalog, meta, stream, health, typed legal-source adapter, validation, Italian metadata, README, and deterministic tests. npm run typecheck, npm test (6/6), npm run build, compiled artifact inspection, and live curls of health/manife"
-    },
-    {
-      "id": "REQ-002",
-      "description": "il sottodominio sarà opossu.newera.page.dev.",
-      "mandatory": true,
-      "status": "complete",
-      "acceptanceCriteria": "The requested file or implementation exists and its relevant contents were inspected.",
-      "evidenceRef": "public/index.html exists and was inspected; deployment control plane confirmed permanent deployment for opossu.newera.page.dev using build output path public after npm run typecheck, npm test, and npm run build passed."
+      "evidenceRef": "Verified existing legal-only TypeScript/Express Stremio addon. npm install completed; npm run typecheck passed; npm test passed with 1 file and 6 tests; npm run build passed and emitted dist/index.html plus dist/server.js. Fixed evidence-based NodeNext ESM runtime defects by adding .js suffixes to l"
     }
   ]
 }
