@@ -22,7 +22,7 @@ Scripts: `dev`, `build`, `start`, `test`, `typecheck`
 ### `public/index.html` - 28 lines
 - exports: (nothing public)
 
-### `src/app.ts` - 15 lines
+### `src/app.ts` - 16 lines
 - imports: `src/catalog.ts`, `src/sources.ts`, `src/types.ts`
 - `app` (const)
 
