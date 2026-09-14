@@ -42,8 +42,9 @@ Scripts: `dev`, `build`, `start`, `test`, `typecheck`
 - `MediaType` (type)
 
 ### `test/app.test.ts` - 12 lines
+- imports: `src/app.ts`
 - exports: (nothing public)
 
 ## Unresolved references
 
-- `test/app.test.ts:3` imports `../src/app.js` - **this file does not exist yet**
+- (none) - every internal import resolves.
