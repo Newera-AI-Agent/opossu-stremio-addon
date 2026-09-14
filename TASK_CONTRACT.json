@@ -1,20 +1,20 @@
 {
-  "originalRequest": "opossu-2026 va benissimo",
-  "normalizedInterpretation": "The requested opossu-2026 deployment is built, verified, and available at the selected permanent subdomain.",
+  "originalRequest": "opossu-2026-2026",
+  "normalizedInterpretation": "opossu-2026-2026",
   "assumptions": [],
   "profile": "fast",
   "requirements": [
     {
       "id": "REQ-001",
-      "description": "opossu-2026 va benissimo",
+      "description": "opossu-2026-2026",
       "mandatory": true,
-      "status": "completed",
-      "acceptanceCriteria": "Concrete implementation evidence is recorded and the outcome matches the user request.",
-      "evidenceRef": "TASK_CONTRACT.md:12"
+      "status": "pending",
+      "evidenceType": "custom",
+      "acceptanceCriteria": "Concrete implementation evidence is recorded and the outcome matches the user request."
     }
   ],
   "featureMatrix": [
-    "opossu-2026 va benissimo"
+    "opossu-2026-2026"
   ],
   "contentMatrix": [],
   "assetManifest": [],
@@ -24,6 +24,6 @@
   "platformRequirements": [],
   "permissions": [],
   "deferredItems": [],
-  "createdAt": 1789416608687,
-  "updatedAt": 1789417049754
+  "createdAt": 1789417264950,
+  "updatedAt": 1789417264950
 }
